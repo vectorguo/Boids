@@ -663,7 +663,10 @@ namespace BigCat.NativeCollections
         [BurstCompile]
         public static void ReleaseFclPointer<T>(BigCatNativeFixedCapacityList<T>* fclPointer) where T : unmanaged
         {
-            s_memoryPool->fclChunk.ReleasePointer(fclPointer);
+            if (s_memoryPool != null)
+            {
+                s_memoryPool->fclChunk.ReleasePointer(fclPointer);
+            }
         }
 
         #region Utility Methods

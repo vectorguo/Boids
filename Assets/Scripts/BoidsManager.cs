@@ -169,6 +169,7 @@ namespace BigCat.Boids
                         boidsGroup.cohesionWeight,
                         boidsGroup.separationWeight,
                         boidsGroup.separationDistance,
+                        boidsGroup.groundData,
                         boidsGroup.rotateSpeed,
                         Time.deltaTime);
 #if UNITY_ANDROID || UNITY_IOS

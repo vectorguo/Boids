@@ -201,6 +201,16 @@ namespace BigCat.Boids
         public float rotateSpeed = 1.5f;
 
         /// <summary>
+        /// 大组的范围
+        /// </summary>
+        public float macroGroupRange = 8.0f;
+
+        /// <summary>
+        /// 小组的范围
+        /// </summary>
+        public float microGroupRange = 1.0f;
+
+        /// <summary>
         /// 组内对齐系数
         /// </summary>
         public float alignmentWeight = 2.0f;
@@ -221,24 +231,34 @@ namespace BigCat.Boids
         public float separationDistance = 0.5f;
 
         /// <summary>
-        /// 向目标点移动的权重
-        /// </summary>
-        public float goalWeight = 2f;
-
-        /// <summary>
         /// 移动目标点
         /// </summary>
         public List<BoidsGoal> goals;
 
         /// <summary>
-        /// 大组的范围
+        /// 向目标点移动的权重
         /// </summary>
-        public float macroGroupRange = 8.0f;
+        public float goalWeight = 2f;
 
         /// <summary>
-        /// 小组的范围
+        /// 地面
         /// </summary>
-        public float microGroupRange = 1.0f;
+        public BoidsGround ground;
+
+        /// <summary>
+        /// 地面规避权重
+        /// </summary>
+        public float groundAvoidWeight = 2.0f;
+
+        /// <summary>
+        /// 地面规避距离
+        /// </summary>
+        public float groundAvoidDistance = 2.5f;
+
+        /// <summary>
+        /// 地面数据
+        /// </summary>
+        public float3 groundData => new float3(ground.transform.position.y, groundAvoidWeight, groundAvoidDistance);
 
         /// <summary>
         /// Spawn协程

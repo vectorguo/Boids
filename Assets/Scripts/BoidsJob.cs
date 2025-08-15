@@ -398,6 +398,13 @@ namespace BigCat.Boids
         private float m_separationDistance;
 
         /// <summary>
+        /// 地面数据
+        /// x: 地面高度 y: 地面规避权重 z: 地面规避距离
+        /// </summary>
+        [ReadOnly]
+        private float3 m_groundData;
+
+        /// <summary>
         /// 最大转向速度
         /// </summary>
         [ReadOnly]
@@ -423,6 +430,7 @@ namespace BigCat.Boids
             float cohesionWeight,
             float separationWeight,
             float separationDistance,
+            float3 groundData,
             float rotateSpeed,
             float deltaTime)
         {
@@ -442,6 +450,7 @@ namespace BigCat.Boids
             m_separationWeight = separationWeight;
             m_separationDistance = separationDistance;
 
+            m_groundData = groundData;
             m_rotateSpeed = rotateSpeed;
             m_deltaTime = deltaTime;
         }
@@ -497,6 +506,14 @@ namespace BigCat.Boids
                         }
                     }
                 }
+            }
+
+            // Ground规避
+            var toGroundHeight = curPosition.y - m_groundData.x;
+            if (toGroundHeight < m_groundData.z)
+            {
+                // 距离地面太近或者已经到地面一下，需要向上移动
+                finalVelocity += (m_groundData.z - toGroundHeight) * math.up() * m_groundData.y;
             }
 
             // 限制转向速度
