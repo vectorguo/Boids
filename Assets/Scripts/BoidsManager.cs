@@ -136,14 +136,22 @@ namespace BigCat.Boids
                     boidsGroupData.Clear();
 
                     // 首先创建BoidsGroupJob
-                    var boidsGroupJob = new BoidsGroupJob(
+                    var boidsMacroGroupJob = new BoidsMacroGroupJob(
                         boidsGroupData.instancePositions,
                         boidsGroupData.instanceRotations,
                         boidsGroup.macroGroupRange,
                         boidsGroupData.macroGroupInfos,
                         boidsGroupData.macroGroupIndices,
                         boidsGroupData.realGroupCounts);
-                    var boidsGroupJobHandle = boidsGroupJob.Schedule();
+                    var boidsMicroGroupJob = new BoidsMicroGroupJob(
+                        boidsGroupData.instancePositions,
+                        boidsGroup.microGroupRange,
+                        boidsGroupData.microGroupInfos,
+                        boidsGroupData.microGroupIndices,
+                        boidsGroupData.realGroupCounts);
+                    var boidsGroupJobHandle = JobHandle.CombineDependencies(
+                        boidsMacroGroupJob.Schedule(),
+                        boidsMicroGroupJob.Schedule());
 
                     // BoidsRefreshVelocityJob
                     var boidsRefreshVelocityJob = new BoidsRefreshVelocityJob(
@@ -152,12 +160,15 @@ namespace BigCat.Boids
                         boidsGroupData.instanceVelocities,
                         boidsGroupData.macroGroupInfos,
                         boidsGroupData.macroGroupIndices,
+                        boidsGroupData.microGroupInfos,
+                        boidsGroupData.microGroupIndices,
                         boidsGroupData.goalPositions,
-                        boidsGroup.rotateSpeed,
-                        boidsGroup.groupSeparationWeight,
-                        boidsGroup.groupAlignmentWeight,
-                        boidsGroup.groupCohesionWeight,
                         boidsGroup.goalWeight,
+                        boidsGroup.alignmentWeight,
+                        boidsGroup.cohesionWeight,
+                        boidsGroup.separationWeight,
+                        boidsGroup.separationDistance,
+                        boidsGroup.rotateSpeed,
                         Time.deltaTime);
 #if UNITY_ANDROID || UNITY_IOS
                     var boidsRefreshVelocityJobHandle = boidsRefreshVelocityJob.Schedule(boidsGroup.spawnCount, 64, boidsGroupJobHandle);
@@ -176,9 +187,9 @@ namespace BigCat.Boids
                         Time.deltaTime);
 
 #if UNITY_ANDROID || UNITY_IOS
-                    dependencies[i] = boidsRefreshTransformJob.Schedule(boidsGroup.spawnCount, 64, boidsGroupJobHandle);
+                    dependencies[i] = boidsRefreshTransformJob.Schedule(boidsGroup.spawnCount, 64, boidsRefreshVelocityJobHandle);
 #else
-                    dependencies[i] = boidsRefreshTransformJob.Schedule(boidsGroup.spawnCount, 128, boidsGroupJobHandle);
+                    dependencies[i] = boidsRefreshTransformJob.Schedule(boidsGroup.spawnCount, 128, boidsRefreshVelocityJobHandle);
 #endif
                 }
             }

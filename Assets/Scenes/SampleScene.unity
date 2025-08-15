@@ -212,9 +212,10 @@ MonoBehaviour:
     y: 0.8
     z: 1.2
   rotateSpeed: 0.5
-  groupSeparationWeight: 1
-  groupAlignmentWeight: 1
-  groupCohesionWeight: 2
+  alignmentWeight: 1
+  cohesionWeight: 1
+  separationWeight: 1
+  separationDistance: 0.5
   goalWeight: 2
   goals:
   - {fileID: 523303713}

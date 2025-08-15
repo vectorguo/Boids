@@ -47,13 +47,18 @@ namespace BigCat.Boids
         /// 所有Instance的数量
         /// </summary>
         public int instanceCount;
+
+        /// <summary>
+        /// 分离
+        /// </summary>
+        public float3 separation;
     }
 
     /// <summary>
     /// 给BoidsGroup中所有Instance按照空间划分进行分组
     /// </summary>
     //[BurstCompile]
-    public struct BoidsGroupJob : IJob
+    public struct BoidsMacroGroupJob : IJob
     {
         /// <summary>
         /// 每个Instance的位置
@@ -68,7 +73,7 @@ namespace BigCat.Boids
         private BigCatNativeArray<quaternion> m_rotations;
 
         /// <summary>
-        /// 每个大组的范围
+        /// 大组范围
         /// </summary>
         [ReadOnly]
         private float m_macroGroupRange;
@@ -88,7 +93,7 @@ namespace BigCat.Boids
         /// </summary>
         private BigCatNativeArray<int> m_realGroupCounts;
 
-        public BoidsGroupJob(
+        public BoidsMacroGroupJob(
             in BigCatNativeArray<float3> positions,
             in BigCatNativeArray<quaternion> rotations,
             float macroGroupRange,
@@ -112,6 +117,8 @@ namespace BigCat.Boids
             {
                 var position = m_positions[i];
                 var forward = math.forward(m_rotations[i]);
+
+                // 大组
                 var macroGroupHash = math.hash(new int3(math.floor(position / m_macroGroupRange)));
                 var macroGroupIndex = GetMacroGroupIndex(macroGroupHash);
                 if (macroGroupIndex < 0)
@@ -168,6 +175,109 @@ namespace BigCat.Boids
         }
     }
 
+    public struct BoidsMicroGroupJob : IJob
+    {
+        /// <summary>
+        /// 每个Instance的位置
+        /// </summary>
+        [ReadOnly]
+        private BigCatNativeArray<float3> m_positions;
+
+        /// <summary>
+        /// 小组范围
+        /// </summary>
+        [ReadOnly]
+        private float m_microGroupRange;
+
+        /// <summary>
+        /// Instance划分的小组的真实数量
+        /// </summary>
+        private BigCatNativeList<BoidsMicroGroupInfo>.ParallelReadWriter m_microGroupInfos;
+
+        /// <summary>
+        /// 每个Instance划分的小组的索引
+        /// </summary>
+        private BigCatNativeArray<int> m_microGroupIndices;
+
+        /// <summary>
+        /// 用于存储大组的真实数量的数组
+        /// </summary>
+        private BigCatNativeArray<int> m_realGroupCounts;
+
+        public BoidsMicroGroupJob(
+            in BigCatNativeArray<float3> positions,
+            float microGroupRange,
+            in BigCatNativeList<BoidsMicroGroupInfo> microGroupInfos,
+            in BigCatNativeArray<int> microGroupIndices,
+            in BigCatNativeArray<int> realGroupCounts)
+        {
+            m_positions = positions;
+            m_microGroupRange = microGroupRange;
+            m_microGroupInfos = microGroupInfos.AsParallelReadWriter();
+            m_microGroupIndices = microGroupIndices;
+            m_realGroupCounts = realGroupCounts;
+        }
+
+        //[BurstCompile]
+        public void Execute()
+        {
+            var realMicroGroupCount = 0;
+            for (var i = 0; i < m_positions.length; ++i)
+            {
+                var position = m_positions[i];
+                
+                // 小组
+                var microGroupHash = math.hash(new int3(math.floor(position / m_microGroupRange)));
+                var microGroupIndex = GetMicroGroupIndex(microGroupHash);
+                if (microGroupIndex < 0)
+                {
+                    // 首先检测当前的数组数量是否已经超过上限
+                    if (++realMicroGroupCount >= m_microGroupInfos.capacity)
+                    {
+                        // 如果超过了容量，则设置为-1
+                        m_microGroupIndices[i] = -1;
+                        continue;
+                    }
+                    // 如果没有超过容量，则添加新的小组信息
+                    m_microGroupIndices[i] = m_microGroupInfos.length;
+                    m_microGroupInfos.AddNoResize(new BoidsMicroGroupInfo
+                    {
+                        groupHashValue = microGroupHash,
+                        instanceCount = 1,
+                        separation = position,
+                    });
+                }
+                else
+                {
+                    m_microGroupIndices[i] = microGroupIndex;
+                    unsafe
+                    {
+                        var pMicroGroupInfo = m_microGroupInfos.ElementAt(microGroupIndex);
+                        ++pMicroGroupInfo->instanceCount;
+                        pMicroGroupInfo->separation += position;
+                    }
+                }
+            }
+            m_realGroupCounts[1] = realMicroGroupCount;
+        }
+
+        //[BurstCompile]
+        private unsafe int GetMicroGroupIndex(uint microGroupHash)
+        {
+            for (var i = 0; i < m_microGroupInfos.length; ++i)
+            {
+                var pMicroGroupInfo = m_microGroupInfos.ElementAt(i);
+                if (pMicroGroupInfo->groupHashValue == microGroupHash)
+                {
+                    // 返回找到的微组索引
+                    return i;
+                }
+            }
+            // 未找到对应的微组
+            return -1;
+        }
+    }
+
     /// <summary>
     /// 刷新Boids的速度
     /// </summary>
@@ -204,22 +314,28 @@ namespace BigCat.Boids
         private BigCatNativeArray<int> m_macroGroupIndices;
 
         /// <summary>
+        /// Instance划分的小组的信息
+        /// </summary>
+        [ReadOnly]
+        private BigCatNativeList<BoidsMicroGroupInfo>.ParallelReader m_microGroupInfos;
+
+        /// <summary>
+        /// 每个Instance划分的小组的索引
+        /// </summary>
+        [ReadOnly]
+        private BigCatNativeArray<int> m_microGroupIndices;
+
+        /// <summary>
         /// Goal位置
         /// </summary>
         [ReadOnly]
         private BigCatNativeArray<float3> m_goalPositions;
 
         /// <summary>
-        /// 最大转向速度
+        /// 聚集权重
         /// </summary>
         [ReadOnly]
-        private float m_rotateSpeed;
-
-        /// <summary>
-        /// 分离权重
-        /// </summary>
-        [ReadOnly]
-        private float m_separationWeight;
+        private float m_goalWeight;
 
         /// <summary>
         /// 对齐权重
@@ -234,10 +350,22 @@ namespace BigCat.Boids
         private float m_cohesionWeight;
 
         /// <summary>
-        /// 聚集权重
+        /// 分离权重
         /// </summary>
         [ReadOnly]
-        private float m_goalWeight;
+        private float m_separationWeight;
+
+        /// <summary>
+        /// 分离距离
+        /// </summary>
+        [ReadOnly]
+        private float m_separationDistance;
+
+        /// <summary>
+        /// 最大转向速度
+        /// </summary>
+        [ReadOnly]
+        private float m_rotateSpeed;
 
         /// <summary>
         /// 更新间隔时间
@@ -251,12 +379,15 @@ namespace BigCat.Boids
             in BigCatNativeArray<float3> velocities,
             in BigCatNativeList<BoidsMacroGroupInfo> macroGroupInfos,
             in BigCatNativeArray<int> macroGroupIndices,
+            in BigCatNativeList<BoidsMicroGroupInfo> microGroupInfos,
+            in BigCatNativeArray<int> microGroupIndices,
             in BigCatNativeArray<float3> goalPositions,
-            float rotateSpeed,
-            float separationWeight,
+            float goalWeight,
             float alignmentWeight,
             float cohesionWeight,
-            float goalWeight,
+            float separationWeight,
+            float separationDistance,
+            float rotateSpeed,
             float deltaTime)
         {
             m_positions = positions;
@@ -264,16 +395,18 @@ namespace BigCat.Boids
             m_velocities = velocities;
             m_macroGroupInfos = macroGroupInfos.AsParallelReader();
             m_macroGroupIndices = macroGroupIndices;
+            m_microGroupInfos = microGroupInfos.AsParallelReader();
+            m_microGroupIndices = microGroupIndices;
 
             m_goalPositions = goalPositions;
-
-            m_rotateSpeed = rotateSpeed;
-
-            m_separationWeight = separationWeight;
-            m_alignmentWeight = alignmentWeight;
-            m_cohesionWeight = cohesionWeight;
             m_goalWeight = goalWeight;
 
+            m_alignmentWeight = alignmentWeight;
+            m_cohesionWeight = cohesionWeight;
+            m_separationWeight = separationWeight;
+            m_separationDistance = separationDistance;
+
+            m_rotateSpeed = rotateSpeed;
             m_deltaTime = deltaTime;
         }
 
@@ -285,6 +418,7 @@ namespace BigCat.Boids
 
             var finalVelocity = float3.zero;
 
+            // 计算分离与对齐
             var macroGroupIndex = m_macroGroupIndices[index];
             if (macroGroupIndex < 0)
             {
@@ -296,11 +430,7 @@ namespace BigCat.Boids
                 {
                     var pMacroGroupInfo = m_macroGroupInfos.ElementAt(macroGroupIndex);
                     var macroInstanceCount = pMacroGroupInfo->instanceCount;
-
-                    // 计算对齐
                     finalVelocity += m_alignmentWeight * (math.normalizesafe(pMacroGroupInfo->alignment / macroInstanceCount) - curVelocity);
-
-                    // 计算分离
                     finalVelocity += m_cohesionWeight * math.normalizesafe(pMacroGroupInfo->cohesion / macroInstanceCount - curPosition);
                 }
             }
@@ -311,6 +441,29 @@ namespace BigCat.Boids
             var goalWeight = m_goalWeight * math.clamp(math.length(deltaGoal) / 10f, 0.5f, 2f);
             var goalDirection = math.normalizesafe(deltaGoal) * goalWeight;
             finalVelocity += goalDirection * goalWeight;
+
+            // 计算分离
+            var microGroupIndex = m_microGroupIndices[index];
+            if (microGroupIndex >= 0)
+            {
+                unsafe
+                {
+                    var pMicroGroupInfo = m_microGroupInfos.ElementAt(microGroupIndex);
+                    var microInstanceCount = pMicroGroupInfo->instanceCount;
+                    if (microInstanceCount > 1)
+                    {
+                        // 小组内数量超过1才需要分离
+                        var groupCenter = pMicroGroupInfo->separation / microInstanceCount;
+                        var toGroupCenter = groupCenter - curPosition;
+                        var distanceToGroupCenter = math.length(toGroupCenter);
+                        if (distanceToGroupCenter < m_separationDistance)
+                        {
+                            // 如果距离小于分离距离，则进行分离
+                            finalVelocity -= m_separationWeight * math.normalizesafe(toGroupCenter) * (1f - distanceToGroupCenter / m_separationDistance);
+                        }
+                    }
+                }
+            }
 
             // 计算速度
             finalVelocity = math.normalizesafe(finalVelocity);

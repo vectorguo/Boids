@@ -50,7 +50,7 @@ namespace BigCat.Boids
         /// <summary>
         /// 小分组
         /// </summary>
-        public BigCatNativeList<BoidsMacroGroupInfo> microGroupInfos;
+        public BigCatNativeList<BoidsMicroGroupInfo> microGroupInfos;
         public BigCatNativeArray<int> microGroupIndices;
 
         /// <summary>
@@ -88,7 +88,7 @@ namespace BigCat.Boids
             macroGroupInfos = new BigCatNativeList<BoidsMacroGroupInfo>(macroGroupCount);
             macroGroupIndices = new BigCatNativeArray<int>(spawnCount);
             var microGroupCount = Mathf.Min(spawnCount / 4, 256);
-            microGroupInfos = new BigCatNativeList<BoidsMacroGroupInfo>(microGroupCount);
+            microGroupInfos = new BigCatNativeList<BoidsMicroGroupInfo>(microGroupCount);
             microGroupIndices = new BigCatNativeArray<int>(spawnCount);
             realGroupCounts = new BigCatNativeArray<int>(2);
 
@@ -201,19 +201,24 @@ namespace BigCat.Boids
         public float rotateSpeed = 1.5f;
 
         /// <summary>
-        /// 组内分离权重
-        /// </summary>
-        public float groupSeparationWeight = 3f;
-
-        /// <summary>
         /// 组内对齐系数
         /// </summary>
-        public float groupAlignmentWeight = 1.8f;
+        public float alignmentWeight = 1.8f;
 
         /// <summary>
         /// 组内聚集权重
         /// </summary>
-        public float groupCohesionWeight = 1f;
+        public float cohesionWeight = 1f;
+
+        /// <summary>
+        /// 组内分离权重
+        /// </summary>
+        public float separationWeight = 3f;
+
+        /// <summary>
+        /// 超过分离距离后才会分离
+        /// </summary>
+        public float separationDistance = 0.5f;
 
         /// <summary>
         /// 向目标点移动的权重
