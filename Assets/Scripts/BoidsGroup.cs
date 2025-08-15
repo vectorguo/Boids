@@ -60,11 +60,6 @@ namespace BigCat.Boids
         public BigCatNativeArray<int> realGroupCounts;
 
         /// <summary>
-        /// 其他
-        /// </summary>
-        public BigCatNativeArray<int> nearestGoalIndices;
-
-        /// <summary>
         /// 构造函数
         /// </summary>
         public BoidsGroupData(BoidsGroup boidsGroup)
@@ -166,6 +161,11 @@ namespace BigCat.Boids
             instanceVelocities.Dispose();
             instanceMatrices.Dispose();
             goalPositions.Dispose();
+            macroGroupInfos.Dispose();
+            macroGroupIndices.Dispose();
+            microGroupInfos.Dispose();
+            microGroupIndices.Dispose();
+            realGroupCounts.Dispose();
         }
     }
 
@@ -203,7 +203,7 @@ namespace BigCat.Boids
         /// <summary>
         /// 组内对齐系数
         /// </summary>
-        public float alignmentWeight = 1.8f;
+        public float alignmentWeight = 2.0f;
 
         /// <summary>
         /// 组内聚集权重
@@ -223,7 +223,7 @@ namespace BigCat.Boids
         /// <summary>
         /// 向目标点移动的权重
         /// </summary>
-        public float goalWeight = 1f;
+        public float goalWeight = 2f;
 
         /// <summary>
         /// 移动目标点

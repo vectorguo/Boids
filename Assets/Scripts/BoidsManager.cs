@@ -139,6 +139,7 @@ namespace BigCat.Boids
                     var boidsMacroGroupJob = new BoidsMacroGroupJob(
                         boidsGroupData.instancePositions,
                         boidsGroupData.instanceRotations,
+                        boidsGroupData.goalPositions,
                         boidsGroup.macroGroupRange,
                         boidsGroupData.macroGroupInfos,
                         boidsGroupData.macroGroupIndices,

@@ -33,6 +33,11 @@ namespace BigCat.Boids
         /// 聚集
         /// </summary>
         public float3 cohesion;
+
+        /// <summary>
+        /// 最近的Goal索引
+        /// </summary>
+        public int nearestGoalIndex;
     }
 
     //[BurstCompile]
@@ -73,6 +78,12 @@ namespace BigCat.Boids
         private BigCatNativeArray<quaternion> m_rotations;
 
         /// <summary>
+        /// Goal位置
+        /// </summary>
+        [ReadOnly]
+        private BigCatNativeArray<float3> m_goalPositions;
+
+        /// <summary>
         /// 大组范围
         /// </summary>
         [ReadOnly]
@@ -96,6 +107,7 @@ namespace BigCat.Boids
         public BoidsMacroGroupJob(
             in BigCatNativeArray<float3> positions,
             in BigCatNativeArray<quaternion> rotations,
+            in BigCatNativeArray<float3> goalPositions,
             float macroGroupRange,
             in BigCatNativeList<BoidsMacroGroupInfo> macroGroupInfos,
             in BigCatNativeArray<int> macroGroupIndices,
@@ -103,6 +115,7 @@ namespace BigCat.Boids
         {
             m_positions = positions;
             m_rotations = rotations;
+            m_goalPositions = goalPositions;
             m_macroGroupRange = macroGroupRange;
             m_macroGroupInfos = macroGroupInfos.AsParallelReadWriter();
             m_macroGroupIndices = macroGroupIndices;
@@ -123,13 +136,16 @@ namespace BigCat.Boids
                 var macroGroupIndex = GetMacroGroupIndex(macroGroupHash);
                 if (macroGroupIndex < 0)
                 {
-                    //首先检测当前的数组数量是否已经超过上限
+                    // 首先检测当前的数组数量是否已经超过上限
                     if (++realMacroGroupCount >= m_macroGroupInfos.capacity)
                     {
                         // 如果超过了容量，则设置为-1
                         m_macroGroupIndices[i] = -1;
                         continue;
                     }
+
+                    // 计算距离leader最近的Goal索引
+                    var nearestGoalIndex = GetNearestGoalIndex(position);
 
                     // 如果没有超过容量，则添加新的大组信息
                     m_macroGroupIndices[i] = m_macroGroupInfos.length;
@@ -139,7 +155,8 @@ namespace BigCat.Boids
                         instanceCount = 1,
                         leaderInstanceIndex = i,
                         alignment = forward,
-                        cohesion = position
+                        cohesion = position,
+                        nearestGoalIndex = nearestGoalIndex
                     });
                 }
                 else
@@ -172,6 +189,25 @@ namespace BigCat.Boids
 
             // 未找到对应的宏组
             return -1;
+        }
+
+        //[BurstCompile]
+        private int GetNearestGoalIndex(float3 position)
+        {
+            var index = 0;
+            var distanceSq = math.lengthsq(position - m_goalPositions[0]);
+            var goalCount = m_goalPositions.length;
+            for (var i = 1; i < goalCount; ++i)
+            {
+                var toGoal = m_goalPositions[i] - position;
+                var distanceToGoalSq = math.lengthsq(toGoal);
+                if (distanceToGoalSq < distanceSq)
+                {
+                    distanceSq = distanceToGoalSq;
+                    index = i;
+                }
+            }
+            return index;
         }
     }
 
@@ -415,7 +451,6 @@ namespace BigCat.Boids
         {
             var curPosition = m_positions[index];
             var curVelocity = math.forward(m_rotations[index]);
-
             var finalVelocity = float3.zero;
 
             // 计算分离与对齐
@@ -432,15 +467,13 @@ namespace BigCat.Boids
                     var macroInstanceCount = pMacroGroupInfo->instanceCount;
                     finalVelocity += m_alignmentWeight * (math.normalizesafe(pMacroGroupInfo->alignment / macroInstanceCount) - curVelocity);
                     finalVelocity += m_cohesionWeight * math.normalizesafe(pMacroGroupInfo->cohesion / macroInstanceCount - curPosition);
+
+                    // 计算Goal
+                    var goalPosition = m_goalPositions[pMacroGroupInfo->nearestGoalIndex];
+                    finalVelocity += m_goalWeight * math.normalizesafe(goalPosition - curPosition);
+                    finalVelocity = math.normalizesafe(finalVelocity);
                 }
             }
-
-            // 计算Goal
-            var goalPosition = GetNearestPosition(m_goalPositions, curPosition);
-            var deltaGoal = goalPosition - curPosition;
-            var goalWeight = m_goalWeight * math.clamp(math.length(deltaGoal) / 10f, 0.5f, 2f);
-            var goalDirection = math.normalizesafe(deltaGoal) * goalWeight;
-            finalVelocity += goalDirection * goalWeight;
 
             // 计算分离
             var microGroupIndex = m_microGroupIndices[index];
@@ -460,35 +493,15 @@ namespace BigCat.Boids
                         {
                             // 如果距离小于分离距离，则进行分离
                             finalVelocity -= m_separationWeight * math.normalizesafe(toGroupCenter) * (1f - distanceToGroupCenter / m_separationDistance);
+                            finalVelocity = math.normalizesafe(finalVelocity);
                         }
                     }
                 }
             }
 
-            // 计算速度
-            finalVelocity = math.normalizesafe(finalVelocity);
-
             // 限制转向速度
             finalVelocity = curVelocity + (finalVelocity - curVelocity) * m_rotateSpeed * m_deltaTime;
             m_velocities[index] = finalVelocity;
-        }
-
-        //[BurstCompile]
-        private float3 GetNearestPosition(in BigCatNativeArray<float3> positions, float3 position)
-        {
-            var index = 0;
-            var distance = math.lengthsq(position - positions[0]);
-            for (var i = 1; i < positions.length; ++i)
-            {
-                var delta = position - positions[i];
-                var deltaLength = math.lengthsq(delta);
-                if (deltaLength < distance)
-                {
-                    distance = deltaLength;
-                    index = i;
-                }
-            }
-            return positions[index];
         }
     }
 
