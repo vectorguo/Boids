@@ -132,8 +132,8 @@ namespace BigCat.Boids
                 if (boidsBrg.batches.Length > 0)
                 {
                     var boidsGroup = m_boidsGroups[i];
+                    boidsGroup.RefreshDataBeforePreCulling();
                     var boidsGroupData = boidsGroup.data;
-                    boidsGroupData.Clear();
 
                     // 首先创建BoidsGroupJob
                     var boidsMacroGroupJob = new BoidsMacroGroupJob(
@@ -234,9 +234,6 @@ namespace BigCat.Boids
                     }
 
                     graphicsBuffer.UnlockBufferAfterWrite();
-
-                    // 重新调整实例数据的大小
-                    boidsGroupData.Resize();
                 }
             }
         }

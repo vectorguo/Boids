@@ -42,6 +42,11 @@ namespace BigCat.Boids
         public BigCatNativeArray<float3> goalPositions;
 
         /// <summary>
+        /// 障碍物位置数组
+        /// </summary>
+        public BigCatNativeList<float4> obstaclePositions;
+
+        /// <summary>
         /// 大分组
         /// </summary>
         public BigCatNativeList<BoidsMacroGroupInfo> macroGroupInfos;
@@ -77,6 +82,9 @@ namespace BigCat.Boids
             {
                 goalPositions[i] = new float3(goals[i].transform.position);
             }
+
+            // 初始化障碍物位置
+            obstaclePositions = new BigCatNativeList<float4>(2);
 
             // 初始化分组数据
             var macroGroupCount = Mathf.Min(spawnCount / 8, 128);
@@ -122,19 +130,11 @@ namespace BigCat.Boids
         }
 
         /// <summary>
-        /// 清理数据
+        /// 刷新数据
         /// </summary>
-        public void Clear()
+        public void Refresh(Dictionary<Transform, float> dynamicObstacles, int dynamicObstabceStartIndex)
         {
-            macroGroupInfos.Clear();
-            microGroupInfos.Clear();
-        }
-
-        /// <summary>
-        /// 重新调整实例数据的大小
-        /// </summary>
-        public void Resize()
-        {
+            // 重新调整实例数据的大小
             var realMacroGroupCount = realGroupCounts[0];
             var macroGroupCapacity = macroGroupInfos.capacity;
             if (realMacroGroupCount > macroGroupCapacity)
@@ -148,6 +148,25 @@ namespace BigCat.Boids
             {
                 microGroupInfos.SetCapacity(Mathf.Max(realMicroGroupCount, microGroupCapacity + microGroupCapacity / 2));
             }
+
+            // 更新动态障碍物的位置
+            obstaclePositions.Resize(dynamicObstabceStartIndex);
+            if (dynamicObstacles != null && dynamicObstacles.Count > 0)
+            {
+                foreach (var obstacle in dynamicObstacles)
+                {
+                    var obstacleTransform = obstacle.Key;
+                    if (obstacleTransform != null)
+                    {
+                        // 添加动态障碍物的位置
+                        obstaclePositions.Add(new float4(obstacleTransform.position, obstacle.Value));
+                    }
+                }
+            }
+
+            // 清理数据
+            macroGroupInfos.Clear();
+            microGroupInfos.Clear();
         }
 
         /// <summary>
@@ -161,6 +180,7 @@ namespace BigCat.Boids
             instanceVelocities.Dispose();
             instanceMatrices.Dispose();
             goalPositions.Dispose();
+            obstaclePositions.Dispose();
             macroGroupInfos.Dispose();
             macroGroupIndices.Dispose();
             microGroupInfos.Dispose();
@@ -277,6 +297,11 @@ namespace BigCat.Boids
         public BoidsGroupData data => m_data;
 
         /// <summary>
+        /// 动态障碍物列表
+        /// </summary>
+        private Dictionary<Transform, float> m_dynamicObstacles;
+
+        /// <summary>
         /// G Buffer
         /// 用于存储实例数据的图形缓冲区
         /// </summary>
@@ -387,6 +412,28 @@ namespace BigCat.Boids
                 m_data.Dispose();
                 m_graphicsBuffer.Dispose();
             }
+        }
+
+        /// <summary>
+        /// 预裁剪前刷新数据
+        /// </summary>
+        public void RefreshDataBeforePreCulling()
+        {
+            m_data.Refresh(m_dynamicObstacles, 0);
+        }
+
+        /// <summary>
+        /// 添加动态障碍物
+        /// </summary>
+        /// <param name="obstacle">动态障碍物的Transform</param>
+        /// <param name="weight">动态障碍物的权重</param>
+        public void AddDynamicObstacle(Transform obstacle, float weight)
+        {
+            if (m_dynamicObstacles == null)
+            {
+                m_dynamicObstacles = new Dictionary<Transform, float>();
+            }
+            m_dynamicObstacles.Add(obstacle, weight);
         }
     }
 }

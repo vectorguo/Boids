@@ -201,6 +201,19 @@ namespace BigCat.NativeCollections
         }
 
         /// <summary>
+        /// Resize the list to a new length.
+        /// </summary>
+        public void Resize(int newLength)
+        {
+            if (newLength > m_fixedCapacityList->capacity)
+            {
+                // 如果新长度超过当前容量，则扩展容量
+                SetCapacity(newLength);
+            }
+            m_fixedCapacityList->length = newLength;
+        }
+
+        /// <summary>
         /// 设置容量
         /// </summary>
         public void SetCapacity(int requiredCapacity, bool needCopyOriginalData = true)
