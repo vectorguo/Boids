@@ -38,6 +38,11 @@ namespace BigCat.Boids
         /// 最近的Goal索引
         /// </summary>
         public int nearestGoalIndex;
+
+        /// <summary>
+        /// 最近的障碍物索引
+        /// </summary>
+        public int nearestObstacleIndex;
     }
 
     //[BurstCompile]
@@ -84,6 +89,13 @@ namespace BigCat.Boids
         private BigCatNativeArray<float3> m_goalPositions;
 
         /// <summary>
+        /// 障碍物信息
+        /// xyz: 障碍物位置 w: 障碍物权重
+        /// </summary>
+        [ReadOnly]
+        private BigCatNativeList<float4>.ParallelReader m_obstacles;
+
+        /// <summary>
         /// 大组范围
         /// </summary>
         [ReadOnly]
@@ -108,6 +120,7 @@ namespace BigCat.Boids
             in BigCatNativeArray<float3> positions,
             in BigCatNativeArray<quaternion> rotations,
             in BigCatNativeArray<float3> goalPositions,
+            in BigCatNativeList<float4> obstacles,
             float macroGroupRange,
             in BigCatNativeList<BoidsMacroGroupInfo> macroGroupInfos,
             in BigCatNativeArray<int> macroGroupIndices,
@@ -116,6 +129,7 @@ namespace BigCat.Boids
             m_positions = positions;
             m_rotations = rotations;
             m_goalPositions = goalPositions;
+            m_obstacles = obstacles.AsParallelReader();
             m_macroGroupRange = macroGroupRange;
             m_macroGroupInfos = macroGroupInfos.AsParallelReadWriter();
             m_macroGroupIndices = macroGroupIndices;
@@ -146,6 +160,7 @@ namespace BigCat.Boids
 
                     // 计算距离leader最近的Goal索引
                     var nearestGoalIndex = GetNearestGoalIndex(position);
+                    var nearestObstacleIndex = GetNearestObstacleIndex(position);
 
                     // 如果没有超过容量，则添加新的大组信息
                     m_macroGroupIndices[i] = m_macroGroupInfos.length;
@@ -156,7 +171,8 @@ namespace BigCat.Boids
                         leaderInstanceIndex = i,
                         alignment = forward,
                         cohesion = position,
-                        nearestGoalIndex = nearestGoalIndex
+                        nearestGoalIndex = nearestGoalIndex,
+                        nearestObstacleIndex = nearestObstacleIndex
                     });
                 }
                 else
@@ -204,6 +220,24 @@ namespace BigCat.Boids
                 if (distanceToGoalSq < distanceSq)
                 {
                     distanceSq = distanceToGoalSq;
+                    index = i;
+                }
+            }
+            return index;
+        }
+
+        //[BurstCompile]
+        private int GetNearestObstacleIndex(float3 position)
+        {
+            var index = 0;
+            var distanceSq = float.MaxValue;
+            for (var i = 0; i < m_obstacles.length; ++i)
+            {
+                var toObstacle = m_obstacles[i].xyz - position;
+                var distanceToObstacleSq = math.lengthsq(toObstacle);
+                if (distanceToObstacleSq < distanceSq)
+                {
+                    distanceSq = distanceToObstacleSq;
                     index = i;
                 }
             }
@@ -374,6 +408,25 @@ namespace BigCat.Boids
         private float m_goalWeight;
 
         /// <summary>
+        /// 障碍物信息
+        /// xyz: 障碍物位置 w: 障碍物权重
+        /// </summary>
+        [ReadOnly]
+        private BigCatNativeList<float4>.ParallelReader m_obstacles;
+
+        /// <summary>
+        /// 障碍物规避权重
+        /// </summary>
+        [ReadOnly]
+        private float m_obstacleAvoidWeight;
+
+        /// <summary>
+        /// 障碍物规避距离
+        /// </summary>
+        [ReadOnly]
+        private float m_obstacleAvoidDistance;
+
+        /// <summary>
         /// 对齐权重
         /// </summary>
         [ReadOnly]
@@ -426,6 +479,9 @@ namespace BigCat.Boids
             in BigCatNativeArray<int> microGroupIndices,
             in BigCatNativeArray<float3> goalPositions,
             float goalWeight,
+            in BigCatNativeList<float4> obstacles,
+            float obstacleAvoidWeight,
+            float obstacleAvoidDistance,
             float alignmentWeight,
             float cohesionWeight,
             float separationWeight,
@@ -445,66 +501,82 @@ namespace BigCat.Boids
             m_goalPositions = goalPositions;
             m_goalWeight = goalWeight;
 
+            m_obstacles = obstacles.AsParallelReader();
+            m_obstacleAvoidWeight = obstacleAvoidWeight;
+            m_obstacleAvoidDistance = obstacleAvoidDistance;
+
             m_alignmentWeight = alignmentWeight;
             m_cohesionWeight = cohesionWeight;
             m_separationWeight = separationWeight;
             m_separationDistance = separationDistance;
 
             m_groundData = groundData;
+
             m_rotateSpeed = rotateSpeed;
             m_deltaTime = deltaTime;
         }
 
         //[BurstCompile]
-        public void Execute(int index)
+        public unsafe void Execute(int index)
         {
             var curPosition = m_positions[index];
             var curVelocity = math.forward(m_rotations[index]);
             var finalVelocity = float3.zero;
 
             // 计算分离与对齐
+            BoidsMacroGroupInfo* pMacroGroupInfo;
             var macroGroupIndex = m_macroGroupIndices[index];
             if (macroGroupIndex < 0)
             {
+                pMacroGroupInfo = null;
                 finalVelocity = curVelocity;
             }
             else
             {
-                unsafe
-                {
-                    var pMacroGroupInfo = m_macroGroupInfos.ElementAt(macroGroupIndex);
-                    var macroInstanceCount = pMacroGroupInfo->instanceCount;
-                    finalVelocity += m_alignmentWeight * (math.normalizesafe(pMacroGroupInfo->alignment / macroInstanceCount) - curVelocity);
-                    finalVelocity += m_cohesionWeight * math.normalizesafe(pMacroGroupInfo->cohesion / macroInstanceCount - curPosition);
+                pMacroGroupInfo = m_macroGroupInfos.ElementAt(macroGroupIndex);
+                var macroInstanceCount = pMacroGroupInfo->instanceCount;
+                finalVelocity += m_alignmentWeight * (math.normalizesafe(pMacroGroupInfo->alignment / macroInstanceCount) - curVelocity);
+                finalVelocity += m_cohesionWeight * math.normalizesafe(pMacroGroupInfo->cohesion / macroInstanceCount - curPosition);
 
-                    // 计算Goal
-                    var goalPosition = m_goalPositions[pMacroGroupInfo->nearestGoalIndex];
-                    finalVelocity += m_goalWeight * math.normalizesafe(goalPosition - curPosition);
-                    finalVelocity = math.normalizesafe(finalVelocity);
-                }
+                // 计算Goal
+                var goalPosition = m_goalPositions[pMacroGroupInfo->nearestGoalIndex];
+                finalVelocity += m_goalWeight * math.normalizesafe(goalPosition - curPosition);
+                finalVelocity = math.normalizesafe(finalVelocity);
             }
 
             // 计算分离
             var microGroupIndex = m_microGroupIndices[index];
             if (microGroupIndex >= 0)
             {
-                unsafe
+                var pMicroGroupInfo = m_microGroupInfos.ElementAt(microGroupIndex);
+                var microInstanceCount = pMicroGroupInfo->instanceCount;
+                if (microInstanceCount > 1)
                 {
-                    var pMicroGroupInfo = m_microGroupInfos.ElementAt(microGroupIndex);
-                    var microInstanceCount = pMicroGroupInfo->instanceCount;
-                    if (microInstanceCount > 1)
+                    // 小组内数量超过1才需要分离
+                    var groupCenter = pMicroGroupInfo->separation / microInstanceCount;
+                    var toGroupCenter = groupCenter - curPosition;
+                    var distanceToGroupCenter = math.length(toGroupCenter);
+                    if (distanceToGroupCenter < m_separationDistance)
                     {
-                        // 小组内数量超过1才需要分离
-                        var groupCenter = pMicroGroupInfo->separation / microInstanceCount;
-                        var toGroupCenter = groupCenter - curPosition;
-                        var distanceToGroupCenter = math.length(toGroupCenter);
-                        if (distanceToGroupCenter < m_separationDistance)
-                        {
-                            // 如果距离小于分离距离，则进行分离
-                            finalVelocity -= m_separationWeight * math.normalizesafe(toGroupCenter) * (1f - distanceToGroupCenter / m_separationDistance);
-                            finalVelocity = math.normalizesafe(finalVelocity);
-                        }
+                        // 如果距离小于分离距离，则进行分离
+                        finalVelocity -= m_separationWeight * math.normalizesafe(toGroupCenter) * (1f - distanceToGroupCenter / m_separationDistance);
+                        finalVelocity = math.normalizesafe(finalVelocity);
                     }
+                }
+            }
+
+            // Obstacle规避
+            if (pMacroGroupInfo != null && m_obstacles.length > 0)
+            {
+                var nearestObstacle = m_obstacles[pMacroGroupInfo->nearestObstacleIndex];
+                var nearestObstaclePosition = nearestObstacle.xyz;
+                var awayFromObstacle = curPosition - nearestObstaclePosition;
+                var distanceAwayFromObstacle = math.length(awayFromObstacle);
+                if (distanceAwayFromObstacle < m_obstacleAvoidDistance)
+                {
+                    // 如果距离障碍物小于权重，则进行规避
+                    var obstacleWeight = m_obstacleAvoidWeight * nearestObstacle.w;
+                    finalVelocity += obstacleWeight * (nearestObstaclePosition + math.normalizesafe(awayFromObstacle) * m_obstacleAvoidDistance - curPosition);
                 }
             }
 
@@ -513,11 +585,11 @@ namespace BigCat.Boids
             if (toGroundHeight < m_groundData.z)
             {
                 // 距离地面太近或者已经到地面一下，需要向上移动
-                finalVelocity += (m_groundData.z - toGroundHeight) * math.up() * m_groundData.y;
+                finalVelocity += (m_groundData.z - toGroundHeight) * m_groundData.y * math.up();
             }
 
             // 限制转向速度
-            finalVelocity = curVelocity + (finalVelocity - curVelocity) * m_rotateSpeed * m_deltaTime;
+            finalVelocity = curVelocity + m_deltaTime * m_rotateSpeed * (finalVelocity - curVelocity);
             m_velocities[index] = finalVelocity;
         }
     }

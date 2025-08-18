@@ -42,9 +42,10 @@ namespace BigCat.Boids
         public BigCatNativeArray<float3> goalPositions;
 
         /// <summary>
-        /// 障碍物位置数组
+        /// 障碍物信息
+        /// xyz: 障碍物位置 w: 障碍物权重
         /// </summary>
-        public BigCatNativeList<float4> obstaclePositions;
+        public BigCatNativeList<float4> obstacles;
 
         /// <summary>
         /// 大分组
@@ -73,18 +74,24 @@ namespace BigCat.Boids
             var spawnRange = boidsGroup.spawnRange;
             var spawnMinScale = boidsGroup.spawnMinScale;
             var spawnMaxScale = boidsGroup.spawnMaxScale;
-            var goals = boidsGroup.goals;
+            var groupGoals = boidsGroup.goals;
+            var groupObstacles = boidsGroup.obstacles;
 
             // 初始化goals
             var firstGoalPosition = new float3(boidsGroup.goals[0].transform.position);
-            goalPositions = new BigCatNativeArray<float3>(goals.Count);
-            for (var i = 0; i < goals.Count; ++i)
+            goalPositions = new BigCatNativeArray<float3>(groupGoals.Count);
+            for (var i = 0; i < groupGoals.Count; ++i)
             {
-                goalPositions[i] = new float3(goals[i].transform.position);
+                goalPositions[i] = new float3(groupGoals[i].transform.position);
             }
 
             // 初始化障碍物位置
-            obstaclePositions = new BigCatNativeList<float4>(2);
+            obstacles = new BigCatNativeList<float4>(2 + groupObstacles.Count);
+            for (var i = 0; i < groupObstacles.Count; ++i)
+            {
+                var obstacle = groupObstacles[i];
+                obstacles.Add(new float4(obstacle.transform.position, obstacle.weightMultiplier));
+            }
 
             // 初始化分组数据
             var macroGroupCount = Mathf.Min(spawnCount / 8, 128);
@@ -150,7 +157,7 @@ namespace BigCat.Boids
             }
 
             // 更新动态障碍物的位置
-            obstaclePositions.Resize(dynamicObstabceStartIndex);
+            obstacles.Resize(dynamicObstabceStartIndex);
             if (dynamicObstacles != null && dynamicObstacles.Count > 0)
             {
                 foreach (var obstacle in dynamicObstacles)
@@ -159,7 +166,7 @@ namespace BigCat.Boids
                     if (obstacleTransform != null)
                     {
                         // 添加动态障碍物的位置
-                        obstaclePositions.Add(new float4(obstacleTransform.position, obstacle.Value));
+                        obstacles.Add(new float4(obstacleTransform.position, obstacle.Value));
                     }
                 }
             }
@@ -180,7 +187,7 @@ namespace BigCat.Boids
             instanceVelocities.Dispose();
             instanceMatrices.Dispose();
             goalPositions.Dispose();
-            obstaclePositions.Dispose();
+            obstacles.Dispose();
             macroGroupInfos.Dispose();
             macroGroupIndices.Dispose();
             microGroupInfos.Dispose();
@@ -259,6 +266,21 @@ namespace BigCat.Boids
         /// 向目标点移动的权重
         /// </summary>
         public float goalWeight = 2f;
+
+        /// <summary>
+        /// 障碍物
+        /// </summary>
+        public List<BoidsObstacle> obstacles;
+
+        /// <summary>
+        /// 障碍物规避权重
+        /// </summary>
+        public float obstacleAvoidWeight = 1.0f;
+
+        /// <summary>
+        /// 障碍物规避距离
+        /// </summary>
+        public float obstacleAvoidDistance = 2.0f;
 
         /// <summary>
         /// 地面
@@ -373,6 +395,18 @@ namespace BigCat.Boids
                     Debug.LogError("没有设置Goals");
 #endif
                     return;
+                }
+            }
+
+            //删除无效的障碍物
+            if (obstacles != null)
+            {
+                for (var i = obstacles.Count - 1; i >= 0; --i)
+                {
+                    if (obstacles[i] == null)
+                    {
+                        obstacles.RemoveAt(i);
+                    }
                 }
             }
 

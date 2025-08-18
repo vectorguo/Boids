@@ -44,6 +44,7 @@ namespace BigCat.Boids
         /// </summary>
         private readonly List<BoidsGroup> m_boidsGroups = new();
         private readonly List<BoidsBatchRenderGroup> m_boidsBrgs = new();
+        public List<BoidsGroup> boidsGroups => m_boidsGroups;
 
         /// <summary>
         /// 被删除的Boids Batch Render Groups
@@ -140,6 +141,7 @@ namespace BigCat.Boids
                         boidsGroupData.instancePositions,
                         boidsGroupData.instanceRotations,
                         boidsGroupData.goalPositions,
+                        boidsGroupData.obstacles,
                         boidsGroup.macroGroupRange,
                         boidsGroupData.macroGroupInfos,
                         boidsGroupData.macroGroupIndices,
@@ -165,6 +167,9 @@ namespace BigCat.Boids
                         boidsGroupData.microGroupIndices,
                         boidsGroupData.goalPositions,
                         boidsGroup.goalWeight,
+                        boidsGroupData.obstacles,
+                        boidsGroup.obstacleAvoidWeight,
+                        boidsGroup.obstacleAvoidDistance,
                         boidsGroup.alignmentWeight,
                         boidsGroup.cohesionWeight,
                         boidsGroup.separationWeight,

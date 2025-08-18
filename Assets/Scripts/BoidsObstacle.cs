@@ -11,8 +11,8 @@ namespace BigCat.Boids
         void OnDrawGizmos()
         {
             Color lastColor = Gizmos.color;
-            Gizmos.color = Color.red;
-            Gizmos.DrawWireCube(transform.position, new Vector3(0.5f, 0.5f, 0.5f));
+            Gizmos.color = new Color(1, 0, 0, 0.25f);
+            Gizmos.DrawSphere(transform.position, 0.25f);
             Gizmos.color = lastColor;
         }
     }
